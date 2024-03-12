@@ -8,13 +8,28 @@ The scheduler then chooses another task that is ready to run. The state of the h
 
 static void gpioOn(void *pvParameters) {
 	while (1) {
-		digitalWrite(GPIO, HIGH);
+		for (int i = 0; i < 10; i++) {
+			digitalWrite(GPIO, HIGH);
+			printf("------gpioOn\n");
+		}
+		// give other tasks (with the same priority) a chance to run
+		// in the remaining time of the current time slice
+		// if there are no other tasks, this will return immediately
+		taskYIELD(); 
 	}
 }
 
 static void gpioOff(void *pvParameters) {
 	while (1) {
 		digitalWrite(GPIO, LOW);
+		printf("gpioOff\n");
+	}
+}
+
+static void higherPriorityTask(void *pvParameters) {
+	while (1) {
+		printf("higherPriorityTask------\n");
+		vTaskDelay(1000 / portTICK_PERIOD_MS);
 	}
 }
 
@@ -33,6 +48,7 @@ void setup() {
 	pinMode(GPIO, OUTPUT);
 	xTaskCreatePinnedToCore(gpioOn, "gpioOn", 2048, NULL, 1, NULL, app_cpu);
 	xTaskCreatePinnedToCore(gpioOff, "gpioOff", 2048, NULL, 1, NULL, app_cpu);
+	xTaskCreatePinnedToCore(higherPriorityTask, "higherPriorityTask", 2048, NULL, 2, NULL, app_cpu);
 	printf("----- setup done\n");
 }
 
