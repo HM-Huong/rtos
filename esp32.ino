@@ -1,5 +1,5 @@
 #define LED1 12
-#define LED2 13
+#define LED2 2
 #define LED3 14
 
 struct s_led {
@@ -17,7 +17,7 @@ static struct s_led leds[] = {
 static void led_task(void *argp) {
 	struct s_led *led = (struct s_led *)argp;
 	unsigned stack_hwm = 0, tmp;
-	printf("Task for GPIO %d is running on core %d\n", led->gpio, xPortGetCoreID());
+	// printf("Task for GPIO %d is running on core %d\n", led->gpio, xPortGetCoreID());
 	delay(1000); // allow the setup() to finish before the task gets underway
 	while (1) {
 		digitalWrite(led->gpio, led->state ^= 1);
@@ -44,7 +44,6 @@ void setup() {
 	int app_cpu = xPortGetCoreID();
 	printf("app_cpu = %d\n", app_cpu);
 
-	xTaskCreateStatic;
 	for (auto &led : leds) {
 		pinMode(led.gpio, OUTPUT);
 		digitalWrite(led.gpio, led.state);
@@ -56,7 +55,10 @@ void setup() {
 }
 
 void loop() {
-	printf("loop\n");
-	// delete the loopTask (setup + loop is running on core 1) because
-	vTaskDelete(NULL);
+	delay(5000);
+	printf("Suspending middle LED task (GPIO %d)\n", leds[1].gpio);
+	vTaskSuspend(leds[1].task);
+	delay(5000);
+	printf("Resuming middle LED task (GPIO %d)\n", leds[1].gpio);
+	vTaskResume(leds[1].task);
 }
