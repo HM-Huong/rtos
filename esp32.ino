@@ -1,45 +1,74 @@
-#define GPIO 2
+#define LED 2	 // built-in LED
+#define BUTTON 0 // built-in button (boot button)
 
-/*
-In a single-core MCU (Micro-Controller Unit), only one task can execute at any instance in time. The task that is executing runs until a hardware timer indicates that the time slice has expired. At timeout, the FreeRTOS scheduler saves the state of the current task by saving its registers. The current task is said to have been preempted by the timer.
+static QueueHandle_t queue;
 
-The scheduler then chooses another task that is ready to run. The state of the highest priority task, which is ready to run, is restored and resumed where it left off. The duration of the time slice is small enough, that the MCU can run several tasks per second. This is known as concurrent processing.
-*/
+static void debounce_task(void *pvParameters) {
+	uint32_t level, state = 0, last = 0xFFFFFFFF;
+	uint32_t mask = 0x7FFFFFFF;
+	bool event;
 
-static void gpioOn(void *pvParameters) {
 	while (1) {
-		digitalWrite(GPIO, HIGH);
+		// !! is used to convert the level to a boolean value (0 or 1)
+		level = !!digitalRead(BUTTON);
+		// each bit in state represents the last 32 readings
+		state = (state << 1) | level;
+
+		// if all the bits are 1 or 0, then the button has been stable
+		if ((state & mask) == mask || (state & mask) == 0) {
+			// if the current level is different from the last one
+			if (level != last) {
+				printf("Button %s\n", level ? "released" : "pressed");
+				// send an event to the queue and remember the last level
+				event = !!level;
+				if (xQueueSendToBack(queue, &event, 1) == pdPASS) {
+					last = level;
+				}
+			}
+		}
+		// share the CPU with led_task
+		taskYIELD();
 	}
 }
 
-static void gpioOff(void *pvParameters) {
+static void led_task(void *pvParameters) {
+	BaseType_t s;
+	bool event, led = false;
+
+	digitalWrite(LED, led);
+
 	while (1) {
-		digitalWrite(GPIO, LOW);
+		s = xQueueReceive(queue, &event, portMAX_DELAY);
+		assert(s == pdTRUE);
+		// if button is pressed then toggle the LED
+		if (event) {
+			led = !led;
+			digitalWrite(LED, led);
+		}
 	}
 }
 
-// when running
-// loopTask has priority 1
-// IDLE1 task has priority 0
-// ipc1 task has priority 24, but it often waits for an event
 void setup() {
-	delay(1000); // wait for the serial to be ready
-	printf("----- setup\n");
-
-	// get the core this code is running on
 	int app_cpu = xPortGetCoreID();
-	printf("app_cpu = %d\n", app_cpu);
+	TaskHandle_t h;
+	BaseType_t rc;
 
-	pinMode(GPIO, OUTPUT);
-	// we use assert macro to check if the task was created successfully
-	// if not (the expression is false), the error is reported to the serial monitor and the program aborts
-	// uncomment the line below to see the error:
-	// assert(0 == 1);
-	assert(xTaskCreatePinnedToCore(gpioOn, "gpioOn", 2048, NULL, 1, NULL, app_cpu) == pdPASS);
-	assert(xTaskCreatePinnedToCore(gpioOff, "gpioOff", 2048, NULL, 1, NULL, app_cpu) == pdPASS);
-	printf("----- setup done\n");
+	delay(1000); // Wait for the serial console to open
+	queue = xQueueCreate(32, sizeof(bool));
+	assert(queue);
+
+	pinMode(LED, OUTPUT);
+	pinMode(BUTTON, INPUT_PULLUP);
+
+	rc = xTaskCreatePinnedToCore(debounce_task, "debounce", 2048, NULL, 1, &h, app_cpu);
+	assert(rc == pdPASS);
+	assert(h);
+
+	rc = xTaskCreatePinnedToCore(led_task, "led", 2048, NULL, 1, &h, app_cpu);
+	assert(rc == pdPASS);
+	assert(h);
 }
 
 void loop() {
-	vTaskDelete(xTaskGetCurrentTaskHandle());
+	vTaskDelete(NULL);
 }
