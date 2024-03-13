@@ -1,0 +1,7 @@
+{
+	"files.associations": {
+		"soc_caps.h": "c",
+		"esp32-hal.h": "c",
+		"pins_arduino.h": "c"
+	}
+}
